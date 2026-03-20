@@ -4,8 +4,34 @@
 
 ## 실행
 
+### 개발/테스트 (포그라운드)
 ```bash
+source venv/bin/activate
 python auto_post.py
+```
+터미널 닫으면 함께 종료됨.
+
+### 상시 운영 (launchd, macOS)
+`~/Library/LaunchAgents/com.autopost.plist`로 등록되어 있음.
+- 로그인 시 자동 시작
+- 크래시 시 자동 재시작
+- stdout/stderr → `logs/launchd.log`
+
+```bash
+# 시작
+launchctl load ~/Library/LaunchAgents/com.autopost.plist
+
+# 중지
+launchctl unload ~/Library/LaunchAgents/com.autopost.plist
+
+# 재시작
+launchctl unload ~/Library/LaunchAgents/com.autopost.plist && launchctl load ~/Library/LaunchAgents/com.autopost.plist
+
+# 상태 확인
+launchctl list | grep autopost
+
+# 로그 확인
+tail -f logs/launchd.log
 ```
 
 실행 시 두 가지가 함께 시작됩니다:
@@ -19,8 +45,8 @@ python auto_post.py
 **데이터 흐름:**
 1. `main()` — API 스레드 시작 + 스케줄 루프 진입
 2. `run_api_server()` — Flask 서버를 daemon 스레드로 실행 (포트 5000)
-3. `create_post()` — `{일련번호} {요일(한글)}` 형식으로 제목 생성, `post_to_board()` 호출, `logs/YYYYMMDD.log`에 기록, 일련번호 증가 후 `save_config()` 호출
-4. `post_to_board(driver, config, title)` — Selenium headless Chrome으로 로그인 → 글쓰기 페이지 이동 → 제목/본문 입력 → 제출
+3. `create_post()` — `{일련번호} {요일(한글)}` 형식으로 제목 생성, `post_to_board()` 호출, `logs/YYYYMMDD.log`에 기록(성공/에러 모두), 일련번호 증가 후 `save_config()` 호출
+4. `post_to_board(driver, config, title)` — Selenium headless Chrome으로 로그인 → URL 전환 대기 → 글쓰기 페이지 이동 → 제목/본문 입력 → 제출 → URL 변화 대기(성공 확인)
 
 **의존성 (requirements.txt):**
 - `anthropic` — Claude API (예정, 미사용)
@@ -31,7 +57,7 @@ python auto_post.py
 - `pytest`, `pytest-mock` — 단위/통합 테스트 (사용 중)
 
 **config.json 필드:**
-- `current_serial` — 자동 증가 게시글 번호 (현재 1126)
+- `current_serial` — 자동 증가 게시글 번호
 - `board_url` — 게시판 URL
 - `post_time` — 매일 자동 실행 시각 (기본값 `"09:00"`)
 - `login_url` — 로그인 페이지 URL
@@ -58,9 +84,37 @@ python auto_post.py
 curl http://localhost:5000/serial
 curl -X PUT http://localhost:5000/serial -d '{"value":1200}' -H 'Content-Type: application/json'
 curl -X POST http://localhost:5000/serial/increment
+curl -X POST http://localhost:5000/post
 ```
 
+## 테스트
+
+```bash
+pytest tests/ -v
+```
+
+22개 테스트 (단위 + Flask API 통합):
+- `TestGetDayOfWeek` — 월~일 7개 요일 반환값
+- `TestConfigIO` — `load_config` / `save_config` 왕복 정합성
+- `TestPostToBoard` — Selenium Mock으로 `driver.get()` 순서, `send_keys`/`click` 횟수
+- `TestCreatePost` — 로그 파일 생성, 제목 형식, 일련번호 증가
+- `TestFlaskAPI` — GET/PUT/POST 정상·오류 응답
+
 ## 변경 이력
+
+### 2026-03-21
+**launchd 등록 — `~/Library/LaunchAgents/com.autopost.plist`**
+- macOS 상시 운영을 위해 launchd 서비스로 등록
+- 로그인 시 자동 시작(`RunAtLoad`), 크래시 시 자동 재시작(`KeepAlive`)
+- venv Python(`venv/bin/python`) + `WorkingDirectory` 지정
+
+**버그 수정 — `auto_post.py`**
+- `post_to_board()`: submit 클릭 후 `wait.until(EC.url_changes(write_url))` 추가
+  - 기존: 클릭 후 성공 여부 미확인 → 에러 페이지 이동·세션 만료 시에도 성공 처리
+  - 수정: 글쓰기 URL에서 벗어나는 것을 대기, 15초 내 URL 변화 없으면 `TimeoutException`
+- `create_post()`: `except Exception` 블록 추가
+  - 기존: `try/finally`만 존재 → 예외가 스레드 종료와 함께 소리없이 사라짐
+  - 수정: 예외 발생 시 `logs/YYYYMMDD.log`에 `ERROR: ...` 기록 후 `raise`로 재전파
 
 ### 2026-03-20
 **버그 수정 — `auto_post.py`**
@@ -73,10 +127,4 @@ curl -X POST http://localhost:5000/serial/increment
   - 사이트 HTML 변경으로 기존 셀렉터가 `NoSuchElementException` 발생
 
 **테스트 추가 — `tests/test_auto_post.py`**
-- 22개 테스트 (단위 + Flask API 통합)
-  - `TestGetDayOfWeek` — 월~일 7개 요일 반환값
-  - `TestConfigIO` — `load_config` / `save_config` 왕복 정합성
-  - `TestPostToBoard` — Selenium Mock으로 `driver.get()` 순서, `send_keys`/`click` 횟수
-  - `TestCreatePost` — 로그 파일 생성, 제목 형식, 일련번호 증가
-  - `TestFlaskAPI` — GET/PUT/POST 정상·오류 응답
-- 실행: `pytest tests/ -v`
+- 22개 테스트 신규 작성

@@ -55,7 +55,9 @@ def post_to_board(driver, config, title):
     wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, sel['title_input'])))
     driver.find_element(By.CSS_SELECTOR, sel['title_input']).send_keys(title)
     driver.find_element(By.CSS_SELECTOR, sel['content_input']).send_keys(".")
+    write_url = config['write_url']
     driver.find_element(By.CSS_SELECTOR, sel['submit_button']).click()
+    wait.until(EC.url_changes(write_url))
 
 
 def create_post():
@@ -78,6 +80,12 @@ def create_post():
         driver = webdriver.Chrome(options=chrome_options)
         try:
             post_to_board(driver, config, title)
+        except Exception as e:
+            os.makedirs('logs', exist_ok=True)
+            log_path = f"logs/{datetime.now().strftime('%Y%m%d')}.log"
+            with open(log_path, 'a', encoding='utf-8') as f:
+                f.write(f"[{datetime.now()}] ERROR: {e}\n")
+            raise
         finally:
             driver.quit()
 

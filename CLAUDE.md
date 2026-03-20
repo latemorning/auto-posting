@@ -11,6 +11,24 @@ python auto_post.py
 ```
 터미널 닫으면 함께 종료됨.
 
+### 백그라운드 실행 (nohup)
+```bash
+source venv/bin/activate
+nohup python auto_post.py > logs/nohup.log 2>&1 &
+```
+터미널을 닫아도 계속 실행됨. PID 확인 및 종료:
+
+```bash
+# PID 확인
+pgrep -f auto_post.py
+
+# 종료
+pkill -f auto_post.py
+
+# 로그 확인
+tail -f logs/nohup.log
+```
+
 ### 상시 운영 (launchd, macOS)
 `~/Library/LaunchAgents/com.autopost.plist`로 등록되어 있음.
 - 로그인 시 자동 시작
@@ -128,3 +146,4 @@ pytest tests/ -v
 
 **테스트 추가 — `tests/test_auto_post.py`**
 - 22개 테스트 신규 작성
+

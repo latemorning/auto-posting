@@ -1,0 +1,7 @@
+anthropic
+requests
+schedule
+selenium
+flask
+pytest
+pytest-mock

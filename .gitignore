@@ -1,0 +1,16 @@
+# 민감 정보
+config.json
+
+# 로그
+logs/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# 환경
+.env
+venv/
+.venv/
